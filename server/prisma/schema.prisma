@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TranscriptFormat {
+  TEXT
+  MARKDOWN
+  SRT
+  VTT
+}
+
+enum ProcessingStatus {
+  DRAFT
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ActionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ActionOrigin {
+  AI
+  MANUAL
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  meetings     Meeting[]
+}
+
+model Meeting {
+  id                 String             @id @default(cuid())
+  title              String
+  description        String?
+  participants       String[]
+  meetingDate        DateTime
+  timezone           String
+  createdById        String
+  processingStatus   ProcessingStatus   @default(DRAFT)
+  originalTranscript String?
+  transcriptFormat   TranscriptFormat?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  createdBy  User                @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  segments   TranscriptSegment[]
+  minutes    MeetingMinutes?
+  actionItems ActionItem[]
+  jobs       ProcessingJob[]
+
+  @@index([createdById, meetingDate])
+  @@index([createdById, processingStatus])
+}
+
+model TranscriptSegment {
+  id           String  @id @default(cuid())
+  meetingId    String
+  segmentIndex Int
+  speaker      String?
+  text         String
+  startMs      Int?
+  endMs        Int?
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, segmentIndex])
+}
+
+model MeetingMinutes {
+  id           String   @id @default(cuid())
+  meetingId    String   @unique
+  overview     String
+  keyPoints    Json     @default("[]")
+  decisions    Json     @default("[]")
+  risks        Json     @default("[]")
+  openQuestions Json    @default("[]")
+  modelName    String
+  generatedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+}
+
+model ActionItem {
+  id                  String       @id @default(cuid())
+  meetingId           String
+  task                String
+  assignee            String?
+  dueDate             DateTime?    @db.Date
+  originalDueDateText String?
+  priority            Priority     @default(MEDIUM)
+  status              ActionStatus @default(PENDING)
+  evidence            String?
+  sourceSegmentIds    Int[]
+  confidence          Float?
+  origin              ActionOrigin @default(AI)
+  userEdited          Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+  @@index([status, dueDate])
+  @@index([assignee])
+}
+
+model ProcessingJob {
+  id               String    @id @default(cuid())
+  meetingId        String
+  status           JobStatus @default(QUEUED)
+  stage            String?
+  completedStages  String[]
+  errorMessage     String?
+  errorCode        String?
+  attempts         Int       @default(0)
+  promptTokens     Int       @default(0)
+  completionTokens Int       @default(0)
+  heartbeatAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId, createdAt])
+  @@index([status, createdAt])
+}
